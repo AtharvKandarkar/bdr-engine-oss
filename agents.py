@@ -1,11 +1,9 @@
 """
-Outbound BDR Engine v2 — five specialist agents with QA, citations, confidence,
-retries/failure handling, live reasoning (generator), and CSV/Markdown export.
-
-Agents:  ICP Agent -> Research Agent -> Contact Agent -> Email Agent -> QA Agent
-LLM: Groq (open Llama).  Live research: DuckDuckGo.  Emails: Hunter.io (optional).
-No fabrication: research insights carry sources; contacts are verified or handed
-off as verifiable LinkedIn search links.
+Outbound BDR Engine — Wave A (Streamlit / Groq / DuckDuckGo).
+Agents: ICP -> Research -> Contact -> Email -> QA.
+Wave A: SQM-vs-candidate match table, ICP match score, cited insights (source+date),
+"Why FlytBase" per company, retries, live reasoning (generator), CSV/Markdown export.
+Free stack: Groq (LLM) + DuckDuckGo (search, no key) + Hunter.io (optional, emails).
 """
 import os
 import re
@@ -17,9 +15,12 @@ import requests
 from groq import Groq
 
 MODEL = os.environ.get("BDR_MODEL", "llama-3.3-70b-versatile")
+PERSONAS = ["Head of Operations", "VP of HSE", "Site / Division Director"]
+ROLE_KW = ["operation", "safety", "hse", "health", "site", "environment",
+           "sustainab", "director", "mine", "mining", "plant", "maintenance", "chief"]
 
 
-# ---------------- LLM plumbing (with retries) ----------------
+# ---------------- LLM plumbing (retries) ----------------
 def _client():
     key = os.environ.get("GROQ_API_KEY")
     if not key:
@@ -27,7 +28,7 @@ def _client():
     return Groq(api_key=key)
 
 
-def _chat(system, user, temperature=0.4, max_tokens=1400, retries=2):
+def _chat(system, user, temperature=0.4, max_tokens=1600, retries=2):
     last = None
     for attempt in range(retries + 1):
         try:
@@ -37,7 +38,7 @@ def _chat(system, user, temperature=0.4, max_tokens=1400, retries=2):
                           {"role": "user", "content": user}],
             )
             return resp.choices[0].message.content.strip()
-        except Exception as e:  # transient rate-limits etc.
+        except Exception as e:
             last = e
             time.sleep(1.5 * (attempt + 1))
     raise last
@@ -66,7 +67,7 @@ def _parse_json(text):
         return None
 
 
-# ---------------- live web search (retry + fallback) ----------------
+# ---------------- live web search (free, no key) ----------------
 def web_search(query, max_results=6, retries=2):
     try:
         from ddgs import DDGS
@@ -90,69 +91,70 @@ def linkedin_xray(persona, company):
 
 
 # ==================================================================
-# Agent 1 — ICP Agent
+# Agent 1 — ICP Agent (evidence match table)
 # ==================================================================
 def icp_agent(brief):
-    system = "You are an expert B2B outbound strategist. Return ONLY valid JSON."
+    system = "You are an expert B2B outbound strategist. Return ONLY valid JSON, no prose."
     user = f"""Campaign brief:
 Target vertical: {brief['vertical']}
 Reference account: {brief['reference']}
 Goal: {brief['goal']}
 
-1) Write a one-sentence ICP modelled on the reference account.
-2) List 6 real, verifiable companies that match it in scale, operations, and geography.
-   For each, explain WHY it matches the reference account, citing a concrete comparison
-   (commodity, geography, scale, or operating style). Do not invent companies.
+Write a one-sentence ICP, then list 6 real, verifiable matching companies. For EACH company give an evidence-based comparison against the reference account.
 Return JSON:
-{{"icp": "", "accounts": [{{"company": "", "country": "", "commodity": "",
-  "why_match": "why this company is like the reference account, with concrete evidence"}}]}}"""
-    return _parse_json(_chat(system, user)) or {"icp": "", "accounts": []}
+{{"icp":"","accounts":[{{"company":"","country":"","commodity":"",
+ "match":{{"score":0,"features":[
+   {{"feature":"Geography","reference":"","candidate":""}},
+   {{"feature":"Commodity","reference":"","candidate":""}},
+   {{"feature":"Scale","reference":"","candidate":""}},
+   {{"feature":"Hazardous sites","reference":"Yes","candidate":""}},
+   {{"feature":"24x7 operations","reference":"Yes","candidate":""}}],
+   "reasons":["short evidence bullet","..."]}}}}]}}"""
+    return _parse_json(_chat(system, user, 0.4, 2200)) or {"icp": "", "accounts": []}
 
 
 # ==================================================================
-# Agent 2 — Research Agent  (insights + per-insight sources + score)
+# Agent 2 — Research Agent (cited insights + Why FlytBase)
 # ==================================================================
 def research_agent(company, angle):
-    hits = web_search(f"{company} operations expansion technology safety 2025 2026 news", max_results=6)
+    hits = web_search(f"{company} mining operations expansion technology safety 2025 2026 news", max_results=6)
     snippets = "\n".join(
         f"[{i+1}] {h.get('title','')}: {h.get('body','')} (URL: {h.get('href','')})"
         for i, h in enumerate(hits))
-    system = ("You are a rigorous research analyst. Use ONLY the snippets for specific facts, and "
-              "attach the matching source URL to every insight. Never invent numbers. If no snippet "
-              "supports a point, mark its source as 'general knowledge'. Return ONLY valid JSON.")
+    system = ("You are a rigorous analyst. Use ONLY the snippets for specific facts; attach the matching "
+              "source URL and date to each insight; never invent numbers; mark unsupported points source "
+              "'general knowledge'. Return ONLY valid JSON.")
     user = f"""Company: {company}
 FlytBase angle: {angle}
 Snippets:
-{snippets or '(no live results returned)'}
+{snippets or '(no live results)'}
 
 Return JSON:
-{{"insights": [{{"point": "one specific signal", "source": "the URL that supports it or 'general knowledge'"}}],
-  "angle_fit": "1-2 sentences linking the company to the FlytBase angle",
-  "score": 0-100 fit score for autonomous drone inspection at hazardous 24/7 sites,
-  "why_now": "one-line timing trigger"}}"""
-    data = _parse_json(_chat(system, user)) or {}
+{{"insights":[{{"point":"specific recent signal","source":"URL or 'general knowledge'","date":"YYYY-MM or ''"}}],
+  "angle_fit":"1-2 sentences linking the company to the FlytBase angle",
+  "score":0,
+  "why_now":"one-line timing trigger",
+  "why_flytbase":{{"fit_reasons":["e.g. Large open-pit mine","Uses contractor inspections"],
+    "use_cases":["Autonomous inspections","Stockpile monitoring","Perimeter security","Infrastructure inspection"],
+    "priority":"High"}}}}"""
+    data = _parse_json(_chat(system, user, 0.4, 1700)) or {}
     data.setdefault("insights", [])
     data.setdefault("score", 0)
     data.setdefault("why_now", "")
-    data["search_hits"] = len(hits)
+    data.setdefault("why_flytbase", {})
     data["sources"] = [h.get("href") for h in hits if h.get("href")]
+    data["search_hits"] = len(hits)
     return data
 
 
 # ==================================================================
-# Agent 3 — Contact Agent  (real emails via Hunter + confidence)
+# Agent 3 — Contact Agent (domain resolve + Hunter + confidence)
 # ==================================================================
-PERSONAS = ["Head of Operations", "VP of HSE", "Site / Division Director"]
-_ROLE_KEYWORDS = ["operation", "safety", "hse", "health", "site", "environment",
-                  "sustainab", "director", "mine", "mining", "plant", "maintenance", "chief"]
-
-
 def _resolve_domain(company):
-    """Ask the model for the company's primary web domain so Hunter can find emails."""
     try:
         out = _chat("Return ONLY the primary corporate web domain, nothing else.",
-                    f"What is the main website domain for the company '{company}'? "
-                    f"Answer with just the domain, e.g. example.com", temperature=0.0, max_tokens=30)
+                    f"Main website domain for the company '{company}'? Just the domain, e.g. example.com",
+                    temperature=0.0, max_tokens=30)
         m = re.search(r"[a-z0-9.-]+\.[a-z]{2,}", out.lower())
         return m.group(0) if m else None
     except Exception:
@@ -172,12 +174,10 @@ def _hunter_by_domain(domain, limit=30):
     role, other = [], []
     for e in emails:
         name = " ".join(x for x in [e.get("first_name"), e.get("last_name")] if x).strip()
-        rec = {"name": name or None, "title": e.get("position") or "",
-               "email": e.get("value"), "linkedin": e.get("linkedin"),
-               "confidence": e.get("confidence")}
+        rec = {"name": name or None, "role": e.get("position") or "", "email": e.get("value"),
+               "linkedin": e.get("linkedin"), "confidence": e.get("confidence")}
         pos = (e.get("position") or "").lower()
-        (role if any(k in pos for k in _ROLE_KEYWORDS) else other).append(rec)
-    # prefer role-matched; if none, surface the 2 highest-confidence named people
+        (role if any(k in pos for k in ROLE_KW) else other).append(rec)
     if role:
         return role[:5]
     other = [o for o in other if o.get("name")]
@@ -189,17 +189,12 @@ def contact_agent(company):
     domain = _resolve_domain(company)
     contacts = []
     for r in _hunter_by_domain(domain):
-        contacts.append({
-            "name": r.get("name"), "role": r.get("title") or "",
-            "status": "verified email", "confidence": r.get("confidence"),
-            "email": r.get("email"),
-            "link": r.get("linkedin") or linkedin_xray(r.get("title") or "", company),
-            "target": True,
-        })
+        contacts.append({"name": r.get("name"), "role": r.get("role") or "", "status": "verified email",
+                         "confidence": r.get("confidence"), "email": r.get("email"),
+                         "link": r.get("linkedin") or linkedin_xray(r.get("role") or "", company), "target": True})
     for p in PERSONAS:
-        contacts.append({"name": None, "role": p, "status": "verify-live",
-                         "confidence": None, "email": None,
-                         "link": linkedin_xray(p, company), "target": not contacts})
+        contacts.append({"name": None, "role": p, "status": "verify-live", "confidence": None,
+                         "email": None, "link": linkedin_xray(p, company), "target": not any(c["target"] for c in contacts)})
     return contacts, domain
 
 
@@ -217,40 +212,34 @@ Real signals: {signals}
 FlytBase angle: {angle}
 Proof to use: {proof}
 Return a subject line then the body."""
-    return _chat(system, user, temperature=0.6, max_tokens=400)
+    return _chat(system, user, temperature=0.6, max_tokens=420)
 
 
 # ==================================================================
-# Agent 5 — QA Agent  (deterministic checks)
+# Agent 5 — QA Agent
 # ==================================================================
 def qa_agent(account):
     notes, status = [], "pass"
-    res = account.get("research", {})
-    insights = res.get("insights", []) or []
+    insights = account.get("research", {}).get("insights", []) or []
     sourced = sum(1 for i in insights if i.get("source") and i["source"] != "general knowledge")
     if not insights:
-        status, _ = "warn", notes.append("No research insights returned.")
+        status = "warn"; notes.append("No research insights returned.")
     elif sourced / len(insights) < 0.5:
-        status, _ = "warn", notes.append("Under half of insights are backed by a live source.")
+        status = "warn"; notes.append("Under half of insights are backed by a live source.")
     if not [c for c in account.get("contacts", []) if c.get("email")]:
         notes.append("No verified email found; using LinkedIn search links (no fabrication).")
-    sig_words = {w for i in insights for w in re.findall(r"[a-zA-Z]{5,}", i.get("point", "").lower())}
-    for e in account.get("emails", []):
-        body_words = set(re.findall(r"[a-zA-Z]{5,}", e.get("body", "").lower()))
-        if sig_words and not (sig_words & body_words):
-            status, _ = "warn", notes.append(f"Email to {e.get('to')} may not reference a research signal.")
     return {"status": status, "insights_sourced": f"{sourced}/{len(insights)}",
             "notes": notes or ["All checks passed."]}
 
 
 # ==================================================================
-# Orchestrator — generator that yields live events for the UI
+# Orchestrator — generator yielding live events
 # ==================================================================
-def run_pipeline(brief, max_emails_per_account=3):
+def run_pipeline(brief, max_emails_per_account=2):
     yield ("status", "ICP Agent — modelling ICP and finding lookalike accounts", None)
     icp = icp_agent(brief)
     accounts = [{"company": a.get("company"), "country": a.get("country", ""),
-                 "commodity": a.get("commodity", ""), "why_match": a.get("why_match", "")}
+                 "commodity": a.get("commodity", ""), "match": a.get("match", {})}
                 for a in icp.get("accounts", []) if a.get("company")]
     yield ("icp", None, {"icp": icp.get("icp", ""), "accounts": accounts})
 
@@ -286,28 +275,38 @@ def run_pipeline(brief, max_emails_per_account=3):
 # Exports
 # ==================================================================
 def to_markdown(result):
-    lines = [f"# Outbound BDR Engine — account package", "",
-             f"**ICP:** {result.get('icp','')}", ""]
+    L = ["# Outbound BDR Engine — account package", "", f"**ICP:** {result.get('icp','')}", ""]
     for i, a in enumerate(result.get("accounts", []), 1):
-        res = a.get("research", {})
-        lines += [f"## {i}. {a['company']}  (fit {res.get('score','–')}/100)",
-                  f"*{a.get('country','')} · {a.get('commodity','')}*", "",
-                  f"**Why it matches the reference account:** {a.get('why_match','')}", "",
-                  f"**Why now:** {res.get('why_now','')}", "", "**Research signals:**"]
+        res, m = a.get("research", {}), a.get("match", {})
+        L += [f"## {i}. {a['company']}  (fit {res.get('score','–')}/100, match {m.get('score','–')}%)",
+              f"*{a.get('country','')} · {a.get('commodity','')}* — why now: {res.get('why_now','')}", ""]
+        if m.get("features"):
+            L.append("**Match vs reference account:**")
+            for f in m["features"]:
+                L.append(f"- {f.get('feature')}: reference {f.get('reference')} / candidate {f.get('candidate')}")
+            L.append("")
+        L.append("**Research signals:**")
         for ins in res.get("insights", []):
-            src = ins.get("source", "")
-            src = f" ([source]({src}))" if src and src.startswith("http") else f" ({src})" if src else ""
-            lines.append(f"- {ins.get('point','')}{src}")
-        lines += ["", "**Contacts:**"]
+            s = ins.get("source", "")
+            s = f" ([source]({s})" + (f", {ins.get('date')}" if ins.get("date") else "") + ")" if isinstance(s, str) and s.startswith("http") else (f" ({s})" if s else "")
+            L.append(f"- {ins.get('point','')}{s}")
+        fb = res.get("why_flytbase", {})
+        if fb:
+            L += ["", f"**Why FlytBase ({fb.get('priority','')} priority):**"]
+            for x in fb.get("fit_reasons", []):
+                L.append(f"- {x}")
+            if fb.get("use_cases"):
+                L.append("Use cases: " + ", ".join(fb["use_cases"]))
+        L += ["", "**Contacts:**"]
         for c in a.get("contacts", []):
             who = c.get("name") or c.get("role")
-            conf = f" · {c['confidence']}% confidence" if c.get("confidence") else ""
+            conf = f" · {c['confidence']}%" if c.get("confidence") else ""
             em = f" · {c['email']}" if c.get("email") else ""
-            lines.append(f"- {who} — {c.get('status','')}{conf}{em} — [link]({c.get('link','')})")
-        lines += ["", "**Outreach:**"]
+            L.append(f"- {who} — {c.get('status','')}{conf}{em}")
+        L += ["", "**Outreach:**"]
         for e in a.get("emails", []):
-            lines += [f"*To {e.get('to')}:*", "", e.get("body", ""), ""]
+            L += [f"*To {e.get('to')}:*", "", e.get("body", ""), ""]
         qa = a.get("qa", {})
-        lines += [f"**QA:** {qa.get('status','')} — sources {qa.get('insights_sourced','')}; "
-                  + "; ".join(qa.get("notes", [])), "", "---", ""]
-    return "\n".join(lines)
+        L += [f"**QA:** {qa.get('status','')} — {qa.get('insights_sourced','')} sourced; " + "; ".join(qa.get("notes", [])),
+              "", "---", ""]
+    return "\n".join(L)
