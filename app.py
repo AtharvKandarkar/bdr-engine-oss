@@ -76,7 +76,8 @@ if result:
             with st.expander("Contacts"):
                 for c in a.get("contacts", []):
                     label = c.get("name") or c.get("persona")
-                    st.markdown(f"- {label} — [{c.get('status','')}]({c.get('link','')})")
+                    email = f" · `{c['email']}`" if c.get("email") else ""
+                    st.markdown(f"- **{label}** — [{c.get('status','')}]({c.get('link','')}){email}")
             with st.expander("Emails"):
                 for e in a.get("emails", []):
                     st.markdown(f"**To: {e['to']}**")
