@@ -124,6 +124,7 @@ Reference account: {brief['reference']}
 Goal: {brief['goal']}
 
 Write a one-sentence ICP, then list 6 real, verifiable matching companies. For EACH company give an evidence-based comparison against the reference account.
+SCORING: match.score is 0-100. A company that aligns with the reference on geography (same region), commodity, scale, hazardous sites, and 24/7 operations must score 85-95. Only assign a low score for a genuine mismatch. Never lowball a strong match.
 Return JSON:
 {{"icp":"","accounts":[{{"company":"","country":"","commodity":"",
  "match":{{"score":0,"features":[
@@ -152,6 +153,7 @@ FlytBase angle: {angle}
 Snippets:
 {snippets or '(no live results)'}
 
+SCORING: score is a 0-100 fit for autonomous drone inspection at hazardous, 24/7 sites. A large hazardous 24/7 mining operation should score 80-95. Do not lowball a strong operational fit.
 Return JSON:
 {{"insights":[{{"point":"specific recent signal","source":"URL or 'general knowledge'","date":"YYYY-MM or ''"}}],
   "angle_fit":"1-2 sentences linking the company to the FlytBase angle",
