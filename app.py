@@ -14,27 +14,35 @@ st.set_page_config(page_title="Outbound BDR Engine", page_icon="🛰️", layout
 
 st.markdown("""
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Lora:wght@500;600&family=Geist:wght@400;500;700&family=Geist+Mono:wght@400;700&display=swap');
-  .stApp { background:#1a1a1a; color:#f0f0f0; font-family:'Geist',sans-serif; }
-  h1,h2,h3 { font-family:'Lora',Georgia,serif; color:#f0f0f0; }
-  .eyebrow { font-family:'Geist Mono',monospace; font-size:10px; letter-spacing:0.14em; text-transform:uppercase; color:#ec7d42; }
-  .stButton>button { background:#ec7d42; color:#1a1a1a; border:0; font-family:'Geist Mono',monospace; font-weight:700;
-    letter-spacing:0.04em; text-transform:uppercase; border-radius:0; }
-  .stButton>button:hover { background:#d95b28; color:#fff; }
-  .stDownloadButton>button { background:transparent; color:#ec7d42; border:1px solid #ec7d42; border-radius:0; font-family:'Geist Mono',monospace; }
-  .acard { background:#242424; border:1px solid #3d3d3d; padding:20px; margin-bottom:16px; }
-  .score { color:#ec7d42; font-weight:700; font-size:22px; font-family:'Geist Mono',monospace; }
-  .match { color:#f0f0f0; font-size:15px; font-family:'Geist Mono',monospace; }
-  .muted { color:#999; font-size:13px; }
-  .prio { font-family:'Geist Mono',monospace; font-size:10px; letter-spacing:.06em; text-transform:uppercase;
-    padding:2px 8px; border:1px solid #ec7d42; color:#ec7d42; }
-  .stat { background:#242424; border:1px solid #3d3d3d; padding:16px; text-align:center; }
-  .statn { font-family:'Lora',serif; font-size:30px; color:#ec7d42; }
-  .statl { font-family:'Geist Mono',monospace; font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:#999; }
-  .pass { color:#3a7a65; font-weight:700; } .warn { color:#d9a441; font-weight:700; }
-  a { color:#ec7d42; }
-  .chip { display:inline-block; font-family:'Geist Mono',monospace; font-size:11px; color:#ec7d42;
-    border:1px solid #ec7d42; padding:2px 8px; margin:2px 4px 2px 0; }
+  @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Space+Mono:wght@400;700&display=swap');
+  .stApp { background:#ECE8DA; color:#22223B; font-family:'Space Mono',monospace;
+    background-image:radial-gradient(rgba(34,34,59,0.14) 1px, transparent 1px); background-size:15px 15px; }
+  h1 { font-family:'Press Start 2P',monospace !important; color:#E8792B !important; line-height:1.5;
+    text-shadow:3px 3px 0 rgba(34,34,59,0.15); }
+  h2,h3 { font-family:'Space Mono',monospace !important; font-weight:700 !important; color:#22223B !important; }
+  .stApp p, .stApp li, .stApp label, .stMarkdown { font-family:'Space Mono',monospace; }
+  .eyebrow { font-family:'Press Start 2P',monospace; font-size:10px; color:#2E7D5B; letter-spacing:1px; }
+  .stButton>button, .stDownloadButton>button { background:#F5C518; color:#22223B; border:3px solid #22223B;
+    border-radius:0; font-family:'Press Start 2P',monospace; font-size:11px; box-shadow:5px 5px 0 #22223B; padding:12px 16px; }
+  .stButton>button:hover { background:#E8792B; box-shadow:2px 2px 0 #22223B; transform:translate(3px,3px); color:#22223B; }
+  .acard { background:#FFFCF2; border:3px solid #22223B; box-shadow:6px 6px 0 #22223B; padding:20px; margin-bottom:24px; }
+  .score { font-family:'Press Start 2P',monospace; color:#E8792B; font-size:15px; }
+  .match { font-family:'Space Mono',monospace; font-weight:700; color:#22223B; font-size:15px; }
+  .muted { color:#5c5c66; font-size:13px; }
+  .prio { font-family:'Press Start 2P',monospace; font-size:9px; color:#22223B; background:#F5C518;
+    border:2px solid #22223B; padding:4px 7px; }
+  .stat { background:#F5C518; border:3px solid #22223B; box-shadow:5px 5px 0 #22223B; padding:16px; text-align:center; }
+  .statn { font-family:'Press Start 2P',monospace; font-size:20px; color:#22223B; }
+  .statl { font-family:'Space Mono',monospace; font-size:11px; text-transform:uppercase; color:#22223B; font-weight:700; }
+  .pass { color:#2E7D5B; font-weight:700; } .warn { color:#b5761f; font-weight:700; }
+  a { color:#E8792B; font-weight:700; }
+  .chip { display:inline-block; font-family:'Space Mono',monospace; font-size:11px; color:#22223B; background:#fff;
+    border:2px solid #22223B; padding:2px 8px; margin:2px 5px 2px 0; box-shadow:2px 2px 0 #22223B; }
+  .stTextInput input, .stTextArea textarea { border:2px solid #22223B !important; border-radius:0 !important;
+    background:#FFFCF2 !important; color:#22223B !important; font-family:'Space Mono',monospace !important; }
+  section[data-testid="stSidebar"] { background:#F5C518; border-right:3px solid #22223B; }
+  [data-testid="stExpander"] { border:2px solid #22223B !important; border-radius:0 !important; background:#FFFCF2; }
+  code { background:#22223B !important; color:#F5C518 !important; }
 </style>
 """, unsafe_allow_html=True)
 
