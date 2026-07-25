@@ -67,8 +67,24 @@ def _parse_json(text):
         return None
 
 
-# ---------------- live web search (free, no key) ----------------
-def web_search(query, max_results=6, retries=2):
+# ---------------- live web search ----------------
+# Primary: Tavily (reliable, LLM-ready) if TAVILY_API_KEY is set.
+# Fallback: DuckDuckGo (free, no key). Returns dicts with title/body/href.
+def _tavily_search(query, max_results=6):
+    key = os.environ.get("TAVILY_API_KEY")
+    if not key:
+        return []
+    try:
+        r = requests.post("https://api.tavily.com/search",
+                          json={"api_key": key, "query": query, "max_results": max_results,
+                                "search_depth": "basic"}, timeout=25)
+        results = (r.json() or {}).get("results", [])
+        return [{"title": x.get("title"), "body": x.get("content"), "href": x.get("url")} for x in results]
+    except Exception:
+        return []
+
+
+def _ddg_search(query, max_results=6, retries=2):
     try:
         from ddgs import DDGS
     except Exception:
@@ -83,6 +99,13 @@ def web_search(query, max_results=6, retries=2):
         except Exception:
             time.sleep(1.0 * (attempt + 1))
     return []
+
+
+def web_search(query, max_results=6, retries=2):
+    hits = _tavily_search(query, max_results)
+    if hits:
+        return hits
+    return _ddg_search(query, max_results, retries)
 
 
 def linkedin_xray(persona, company):
