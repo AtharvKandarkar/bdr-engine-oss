@@ -9,6 +9,7 @@ import re
 import json
 import urllib.parse
 
+import requests
 from groq import Groq
 
 MODEL = os.environ.get("BDR_MODEL", "llama-3.3-70b-versatile")
@@ -149,11 +150,59 @@ Return JSON: [{{"company": "", "score": 0, "why_now": ""}}]"""
 
 # ---------- Agent 4: Contact Finder (verifiable, no fabrication) ----------
 PERSONAS = ["Head of Operations", "VP of HSE", "Site / Division Director"]
+_ROLE_KEYWORDS = ["operation", "safety", "hse", "health", "site", "environment",
+                  "sustainab", "director", "mine", "mining", "plant", "maintenance"]
+
+
+def _hunter_contacts(company, limit=25):
+    """Live enrichment via Hunter.io. Returns real people with verified emails.
+    Filtered to operations/HSE/site roles. Returns [] if no key or on failure."""
+    key = os.environ.get("HUNTER_API_KEY")
+    if not key:
+        return []
+    try:
+        r = requests.get(
+            "https://api.hunter.io/v2/domain-search",
+            params={"company": company, "api_key": key, "limit": limit},
+            timeout=25,
+        )
+        emails = (r.json() or {}).get("data", {}).get("emails", [])
+    except Exception:
+        return []
+    out = []
+    for e in emails:
+        pos = (e.get("position") or "").lower()
+        if not any(k in pos for k in _ROLE_KEYWORDS):
+            continue
+        name = " ".join(x for x in [e.get("first_name"), e.get("last_name")] if x).strip()
+        out.append({
+            "name": name or None,
+            "title": e.get("position") or "",
+            "email": e.get("value"),
+            "linkedin": e.get("linkedin"),
+            "confidence": e.get("confidence"),
+        })
+    return out
 
 
 def contact_finder(company):
-    contacts = [{"name": None, "persona": p, "status": "verify-live",
-                 "link": linkedin_xray(p, company)} for p in PERSONAS]
+    """Real named contacts (with verified emails) via Hunter where available,
+    otherwise the target personas as verifiable LinkedIn search links. No fabrication."""
+    contacts = []
+    for r in _hunter_contacts(company):
+        contacts.append({
+            "name": r.get("name"),
+            "persona": r.get("title") or "",
+            "status": f"verified · email ({r.get('confidence','?')}%)",
+            "email": r.get("email"),
+            "link": r.get("linkedin") or linkedin_xray(r.get("title") or "", company),
+        })
+    # always include the target personas as fallback search links ("additional targets")
+    for p in PERSONAS:
+        contacts.append({
+            "name": None, "persona": p, "status": "verify-live",
+            "email": None, "link": linkedin_xray(p, company),
+        })
     return contacts
 
 
